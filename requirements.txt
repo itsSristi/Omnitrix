@@ -1,0 +1,105 @@
+# ============================================================
+# AI Career & Interview Platform
+# Python: 3.11.9
+# ============================================================
+
+# -----------------------------
+# Backend / REST API
+# -----------------------------
+fastapi>=0.139,<0.140
+uvicorn[standard]>=0.35,<0.36
+pydantic>=2.11,<3
+pydantic-settings>=2.10,<3
+python-multipart>=0.0.20,<0.1
+email-validator>=2.3,<3
+
+# -----------------------------
+# Authentication & Security
+# -----------------------------
+python-jose[cryptography]>=3.5,<4
+passlib[bcrypt]>=1.7.4,<2
+bcrypt>=4.0,<5
+python-dotenv>=1.1,<2
+
+# -----------------------------
+# Database / ORM / Migrations
+# PostgreSQL recommended for production
+# -----------------------------
+SQLAlchemy>=2.0,<2.1
+alembic>=1.16,<2
+psycopg[binary]>=3.2,<4
+
+# -----------------------------
+# AI / LLM
+# -----------------------------
+openai>=2.47,<3
+tiktoken>=0.11,<1
+tenacity>=9.1,<10
+
+# -----------------------------
+# NLP / Semantic Matching
+# Used for resume skills, job matching,
+# career similarity and skill-gap analysis
+# -----------------------------
+sentence-transformers>=5.6,<5.7
+transformers>=4.55,<5
+torch>=2.8,<2.9
+scikit-learn>=1.7,<1.8
+scipy>=1.16,<2
+nltk>=3.9,<4
+spacy>=3.8,<4
+
+# -----------------------------
+# Resume / Document Processing
+# PDF, DOCX and spreadsheet resumes
+# -----------------------------
+pypdf>=6.0,<7
+python-docx>=1.2,<2
+openpyxl>=3.1,<4
+beautifulsoup4>=4.13,<5
+
+# -----------------------------
+# Data Processing / Analytics
+# -----------------------------
+numpy>=2.3,<3
+pandas>=2.3,<3
+
+# -----------------------------
+# AI Mock Interview - Speech
+# Speech-to-text and audio analysis
+# -----------------------------
+faster-whisper>=1.2,<2
+librosa>=0.11,<1
+soundfile>=0.13,<1
+
+# -----------------------------
+# HTTP / External Job & Company APIs
+# -----------------------------
+httpx>=0.28,<1
+requests>=2.32,<3
+
+# -----------------------------
+# Background Jobs / Caching
+# Useful for resume processing,
+# interview evaluation and scheduled tasks
+# -----------------------------
+celery>=5.5,<6
+redis>=6.4,<7
+
+# -----------------------------
+# Dashboard / Data Visualization
+# -----------------------------
+streamlit>=1.48,<2
+plotly>=6.2,<7
+
+# -----------------------------
+# Testing
+# -----------------------------
+pytest>=8.4,<9
+pytest-asyncio>=1.1,<2
+httpx>=0.28,<1
+
+# -----------------------------
+# Optional production utilities
+# -----------------------------
+orjson>=3.11,<4

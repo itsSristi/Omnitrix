@@ -1,5 +1,5 @@
 from pwdlib import PasswordHash
-import jwt
+from jose import jwt
 from datetime import datetime, timedelta, timezone
 
 

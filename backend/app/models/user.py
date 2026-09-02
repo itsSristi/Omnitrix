@@ -31,6 +31,13 @@ class User(Base):
         nullable=False
     )
 
+    role = Column(
+        String(20),
+        nullable=False,
+        default="user",
+        server_default="user"
+    )
+
     education = Column(
         String(255),
         nullable=True

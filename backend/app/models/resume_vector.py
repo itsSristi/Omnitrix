@@ -6,18 +6,13 @@ from pgvector.sqlalchemy import Vector
 from app.database.database import Base
 
 
-class Resume(Base):
-    __tablename__ = "resumes"
+class ResumeVector(Base):
+    __tablename__ = "resume_vectors"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    file_name = Column(String(255), nullable=True)
-    file_type = Column(String(50), nullable=True)
-    title = Column(String(255), nullable=True)
-    summary = Column(Text, nullable=True)
-    raw_text = Column(Text, nullable=True)
-    extracted_skills = Column(JSON, nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    text_content = Column(Text, nullable=False)
     payload = Column("metadata", JSON, nullable=True, default=dict)
-    embedding = Column(Vector(64), nullable=True)
+    embedding = Column(Vector(64), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

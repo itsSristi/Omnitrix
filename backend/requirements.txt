@@ -28,7 +28,7 @@ python-dotenv>=1.1,<2
 # -----------------------------
 SQLAlchemy>=2.0,<2.1
 alembic>=1.16,<2
-psycopg[binary]>=3.2,<4
+psycopg2-binary>=2.9,<3
 
 # -----------------------------
 # AI / LLM
@@ -98,7 +98,7 @@ plotly>=6.2,<7
 # -----------------------------
 pytest>=8.4,<9
 pytest-asyncio>=1.1,<2
-httpx>=0.28,<1
+
 
 # -----------------------------
 # Optional production utilities

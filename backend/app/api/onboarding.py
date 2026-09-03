@@ -25,6 +25,58 @@ def get_db():
         db.close()
 
 
+@router.get(
+    "/",
+    response_model=OnboardingResponse
+)
+def get_onboarding(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.id == current_user.id).first()
+
+    if not user:
+        raise ValueError("User not found")
+
+    return {
+        "message": "Onboarding details fetched successfully",
+        "user_id": user.id,
+        "education": user.education,
+        "experience": user.experience,
+        "career_goal": user.career_goal
+    }
+
+
+@router.put(
+    "/",
+    response_model=OnboardingResponse
+)
+def update_onboarding(
+    data: OnboardingRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.id == current_user.id).first()
+
+    if not user:
+        raise ValueError("User not found")
+
+    user.education = data.education
+    user.experience = data.experience
+    user.career_goal = data.career_goal
+
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "message": "Onboarding updated successfully",
+        "user_id": user.id,
+        "education": user.education,
+        "experience": user.experience,
+        "career_goal": user.career_goal
+    }
+
+
 @router.post(
     "/",
     response_model=OnboardingResponse
@@ -35,7 +87,6 @@ def complete_onboarding(
     db: Session = Depends(get_db)
 ):
 
-    # Get the logged-in user from the database
     user = db.query(User).filter(
         User.id == current_user.id
     ).first()
@@ -46,7 +97,6 @@ def complete_onboarding(
             "user_id": current_user.id
         }
 
-    # Update onboarding information
     user.education = data.education
     user.experience = data.experience
     user.career_goal = data.career_goal

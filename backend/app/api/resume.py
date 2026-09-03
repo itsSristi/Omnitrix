@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.ai.resume_ai import ResumeAI
 from app.database.database import SessionLocal
 from app.dependencies.auth import get_current_user
 from app.models.resume import Resume
@@ -19,6 +20,7 @@ router = APIRouter(prefix="/resume", tags=["Resume"])
 vector_store = InMemoryVectorStore()
 resume_analyzer = ResumeAnalyzer()
 career_engine = CareerRecommendationEngine()
+resume_ai = ResumeAI()
 
 
 def get_db():
@@ -71,6 +73,7 @@ def upload_resume(
         raise HTTPException(status_code=400, detail="Resume file is empty")
 
     parsed = resume_analyzer.analyze(text, user_id=current_user.id)
+    ai_evaluation = resume_ai.evaluate(text, parsed)
     embedding_record = vector_store.add_document(
         current_user.id,
         text,
@@ -108,6 +111,7 @@ def upload_resume(
         "user_id": current_user.id,
         "resume_id": resume_record.id,
         "summary": parsed,
+        **({"ai_evaluation": ai_evaluation} if ai_evaluation.get("status") == "complete" else {}),
     }
 
 
@@ -121,6 +125,7 @@ def analyze_resume_text(
 
     analysis = resume_analyzer.analyze(text, user_id=current_user.id)
     recommendations = career_engine.recommend(analysis["skills"])
+    ai_evaluation = resume_ai.evaluate(text, analysis)
 
     return {
         "message": "Resume analysis complete",
@@ -130,6 +135,7 @@ def analyze_resume_text(
         "skill_gap": {
             "missing_skills": recommendations[0]["missing_skills"] if recommendations else [],
         },
+        **({"ai_evaluation": ai_evaluation} if ai_evaluation.get("status") == "complete" else {}),
     }
 
 

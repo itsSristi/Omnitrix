@@ -1,35 +1,22 @@
 from logging.config import fileConfig
-import os
-
-from dotenv import load_dotenv
-
-from sqlalchemy import engine_from_config
+from sqlalchemy import engine_from_config, text
 from sqlalchemy import pool
 
 from alembic import context
 
 
 # --------------------------------------------------
-# Load .env
-# --------------------------------------------------
-
-load_dotenv()
-
-
-# --------------------------------------------------
 # Import database Base
 # --------------------------------------------------
 
-from app.database.database import Base
+from app.database.database import Base, DATABASE_URL
 
 
 # --------------------------------------------------
 # Import ALL SQLAlchemy models
 # --------------------------------------------------
 
-from app.models import (
-    User
-)
+from app.models import Resume, ResumeVector, User  # noqa: F401
 
 
 # --------------------------------------------------
@@ -37,19 +24,6 @@ from app.models import (
 # --------------------------------------------------
 
 config = context.config
-
-
-# --------------------------------------------------
-# Get DATABASE_URL from .env
-# --------------------------------------------------
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-
-if not DATABASE_URL:
-    raise ValueError(
-        "DATABASE_URL is not set in the .env file"
-    )
 
 
 # --------------------------------------------------
@@ -116,6 +90,10 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+
+        if connection.dialect.name == "postgresql":
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            connection.commit()
 
         context.configure(
             connection=connection,

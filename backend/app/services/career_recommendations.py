@@ -39,3 +39,12 @@ class CareerRecommendationEngine:
 
         recommendations.sort(key=lambda item: item["match_score"], reverse=True)
         return recommendations
+
+    def recommend_for_job(self, candidate_skills, job_requirements):
+        result = self.matcher.match(candidate_skills, job_requirements)
+        return {
+            "match_score": result["match_score"],
+            "matched_skills": result["matched_skills"],
+            "missing_skills": result["missing_skills"],
+            "extra_skills": result["extra_skills"],
+        }

@@ -1,0 +1,282 @@
+{
+  "1": {
+    "db_vector_id": 21,
+    "resume_id": 14,
+    "section_type": "summary",
+    "skill_id": null,
+    "source_text": "Demo Resume Alex Morgan alex.morgan@example.com | +1 555 010 2026",
+    "type": "resume_section",
+    "user_id": 29,
+    "vector_id": 1
+  },
+  "10": {
+    "db_vector_id": 30,
+    "resume_id": 14,
+    "section_type": "skill:PostgreSQL",
+    "skill_id": 5,
+    "source_text": "PostgreSQL",
+    "type": "skill",
+    "user_id": 29,
+    "vector_id": 10
+  },
+  "11": {
+    "db_vector_id": 31,
+    "resume_id": 14,
+    "section_type": "skill:Docker",
+    "skill_id": 6,
+    "source_text": "Docker",
+    "type": "skill",
+    "user_id": 29,
+    "vector_id": 11
+  },
+  "12": {
+    "db_vector_id": 32,
+    "resume_id": 14,
+    "section_type": "skill:AWS",
+    "skill_id": 7,
+    "source_text": "AWS",
+    "type": "skill",
+    "user_id": 29,
+    "vector_id": 12
+  },
+  "13": {
+    "db_vector_id": 33,
+    "resume_id": 14,
+    "section_type": "skill:React",
+    "skill_id": 8,
+    "source_text": "React",
+    "type": "skill",
+    "user_id": 29,
+    "vector_id": 13
+  },
+  "14": {
+    "db_vector_id": 34,
+    "resume_id": 14,
+    "section_type": "skill:AI",
+    "skill_id": 9,
+    "source_text": "AI",
+    "type": "skill",
+    "user_id": 29,
+    "vector_id": 14
+  },
+  "15": {
+    "db_vector_id": 35,
+    "resume_id": 15,
+    "section_type": "summary",
+    "skill_id": null,
+    "source_text": "Demo Resume Alex Morgan alex.morgan@example.com | +1 555 010 2026",
+    "type": "resume_section",
+    "user_id": 32,
+    "vector_id": 15
+  },
+  "16": {
+    "db_vector_id": 36,
+    "resume_id": 15,
+    "section_type": "skills",
+    "skill_id": null,
+    "source_text": "Skills: Python, FastAPI, SQL, PostgreSQL, Docker, AWS, React, Machine Learning",
+    "type": "resume_section",
+    "user_id": 32,
+    "vector_id": 16
+  },
+  "17": {
+    "db_vector_id": 37,
+    "resume_id": 15,
+    "section_type": "experience",
+    "skill_id": null,
+    "source_text": "Experience: Backend Developer building APIs and data services.",
+    "type": "resume_section",
+    "user_id": 32,
+    "vector_id": 17
+  },
+  "18": {
+    "db_vector_id": 38,
+    "resume_id": 15,
+    "section_type": "education",
+    "skill_id": null,
+    "source_text": "Education: BSc Computer Science Career goal: AI platform and backend engineering.",
+    "type": "resume_section",
+    "user_id": 32,
+    "vector_id": 18
+  },
+  "19": {
+    "db_vector_id": 39,
+    "resume_id": 15,
+    "section_type": "full_resume",
+    "skill_id": null,
+    "source_text": "Demo Resume Alex Morgan alex.morgan@example.com | +1 555 010 2026 Skills: Python, FastAPI, SQL, PostgreSQL, Docker, AWS, React, Machine Learning Experience: Backend Developer building APIs and data services. Education: BSc Computer Science Career goal: AI platform and backend engineering.",
+    "type": "resume_section",
+    "user_id": 32,
+    "vector_id": 19
+  },
+  "2": {
+    "db_vector_id": 22,
+    "resume_id": 14,
+    "section_type": "skills",
+    "skill_id": null,
+    "source_text": "Skills: Python, FastAPI, SQL, PostgreSQL, Docker, AWS, React, Machine Learning",
+    "type": "resume_section",
+    "user_id": 29,
+    "vector_id": 2
+  },
+  "20": {
+    "db_vector_id": 40,
+    "resume_id": 15,
+    "section_type": "skill:API",
+    "skill_id": 1,
+    "source_text": "API",
+    "type": "skill",
+    "user_id": 32,
+    "vector_id": 20
+  },
+  "21": {
+    "db_vector_id": 41,
+    "resume_id": 15,
+    "section_type": "skill:SQL",
+    "skill_id": 2,
+    "source_text": "SQL",
+    "type": "skill",
+    "user_id": 32,
+    "vector_id": 21
+  },
+  "22": {
+    "db_vector_id": 42,
+    "resume_id": 15,
+    "section_type": "skill:Python",
+    "skill_id": 3,
+    "source_text": "Python",
+    "type": "skill",
+    "user_id": 32,
+    "vector_id": 22
+  },
+  "23": {
+    "db_vector_id": 43,
+    "resume_id": 15,
+    "section_type": "skill:FastAPI",
+    "skill_id": 4,
+    "source_text": "FastAPI",
+    "type": "skill",
+    "user_id": 32,
+    "vector_id": 23
+  },
+  "24": {
+    "db_vector_id": 44,
+    "resume_id": 15,
+    "section_type": "skill:PostgreSQL",
+    "skill_id": 5,
+    "source_text": "PostgreSQL",
+    "type": "skill",
+    "user_id": 32,
+    "vector_id": 24
+  },
+  "25": {
+    "db_vector_id": 45,
+    "resume_id": 15,
+    "section_type": "skill:Docker",
+    "skill_id": 6,
+    "source_text": "Docker",
+    "type": "skill",
+    "user_id": 32,
+    "vector_id": 25
+  },
+  "26": {
+    "db_vector_id": 46,
+    "resume_id": 15,
+    "section_type": "skill:AWS",
+    "skill_id": 7,
+    "source_text": "AWS",
+    "type": "skill",
+    "user_id": 32,
+    "vector_id": 26
+  },
+  "27": {
+    "db_vector_id": 47,
+    "resume_id": 15,
+    "section_type": "skill:React",
+    "skill_id": 8,
+    "source_text": "React",
+    "type": "skill",
+    "user_id": 32,
+    "vector_id": 27
+  },
+  "28": {
+    "db_vector_id": 48,
+    "resume_id": 15,
+    "section_type": "skill:AI",
+    "skill_id": 9,
+    "source_text": "AI",
+    "type": "skill",
+    "user_id": 32,
+    "vector_id": 28
+  },
+  "3": {
+    "db_vector_id": 23,
+    "resume_id": 14,
+    "section_type": "experience",
+    "skill_id": null,
+    "source_text": "Experience: Backend Developer building APIs and data services.",
+    "type": "resume_section",
+    "user_id": 29,
+    "vector_id": 3
+  },
+  "4": {
+    "db_vector_id": 24,
+    "resume_id": 14,
+    "section_type": "education",
+    "skill_id": null,
+    "source_text": "Education: BSc Computer Science Career goal: AI platform and backend engineering.",
+    "type": "resume_section",
+    "user_id": 29,
+    "vector_id": 4
+  },
+  "5": {
+    "db_vector_id": 25,
+    "resume_id": 14,
+    "section_type": "full_resume",
+    "skill_id": null,
+    "source_text": "Demo Resume Alex Morgan alex.morgan@example.com | +1 555 010 2026 Skills: Python, FastAPI, SQL, PostgreSQL, Docker, AWS, React, Machine Learning Experience: Backend Developer building APIs and data services. Education: BSc Computer Science Career goal: AI platform and backend engineering.",
+    "type": "resume_section",
+    "user_id": 29,
+    "vector_id": 5
+  },
+  "6": {
+    "db_vector_id": 26,
+    "resume_id": 14,
+    "section_type": "skill:API",
+    "skill_id": 1,
+    "source_text": "API",
+    "type": "skill",
+    "user_id": 29,
+    "vector_id": 6
+  },
+  "7": {
+    "db_vector_id": 27,
+    "resume_id": 14,
+    "section_type": "skill:SQL",
+    "skill_id": 2,
+    "source_text": "SQL",
+    "type": "skill",
+    "user_id": 29,
+    "vector_id": 7
+  },
+  "8": {
+    "db_vector_id": 28,
+    "resume_id": 14,
+    "section_type": "skill:Python",
+    "skill_id": 3,
+    "source_text": "Python",
+    "type": "skill",
+    "user_id": 29,
+    "vector_id": 8
+  },
+  "9": {
+    "db_vector_id": 29,
+    "resume_id": 14,
+    "section_type": "skill:FastAPI",
+    "skill_id": 4,
+    "source_text": "FastAPI",
+    "type": "skill",
+    "user_id": 29,
+    "vector_id": 9
+  }
+}

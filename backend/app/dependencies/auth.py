@@ -47,6 +47,26 @@ def get_current_user(
 	return user
 
 
+optional_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def get_optional_current_user(
+	credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(optional_bearer_scheme)] = None,
+	db: Annotated[Session, Depends(get_db)] = None,
+) -> User | None:
+	if not credentials:
+		return None
+	try:
+		token = credentials.credentials
+		payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+		user_id = payload.get("sub")
+		if user_id is None:
+			return None
+		return db.query(User).filter(User.id == int(user_id)).first()
+	except Exception:
+		return None
+
+
 def require_admin(
 	current_user: Annotated[User, Depends(get_current_user)]
 ) -> User:
@@ -56,3 +76,4 @@ def require_admin(
 			detail="Admin access required"
 		)
 	return current_user
+

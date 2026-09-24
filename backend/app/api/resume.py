@@ -1,7 +1,13 @@
 import logging
 import os
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
+
+from pydantic import BaseModel as _BaseModel
+
+
+class ResumeTextRequest(_BaseModel):
+    text: str
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
@@ -11,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.resume_ai import ResumeAI
 from app.database.database import SessionLocal
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, get_optional_current_user
 from app.models.resume import Resume
 from app.models.resume_section import ResumeSection
 from app.models.user import User
@@ -25,7 +31,6 @@ from app.services.vector_store import InMemoryVectorStore
 
 router = APIRouter(prefix="/resume", tags=["Resume"])
 logger = logging.getLogger(__name__)
-
 
 vector_store = InMemoryVectorStore()
 resume_analyzer = ResumeAnalyzer()
@@ -46,19 +51,16 @@ def get_db():
 
 def extract_document_text(content: bytes, filename: str, content_type: str | None) -> str:
     suffix = Path(filename).suffix.lower()
-
     try:
         if suffix == ".pdf" or content_type == "application/pdf":
             from io import BytesIO
             from pypdf import PdfReader
-
             reader = PdfReader(BytesIO(content))
             return "\n".join(page.extract_text() or "" for page in reader.pages).strip()
 
-        if suffix == ".docx" or content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        if suffix in (".docx",) or content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             from io import BytesIO
             from docx import Document
-
             document = Document(BytesIO(content))
             return "\n".join(paragraph.text for paragraph in document.paragraphs).strip()
 
@@ -70,23 +72,46 @@ def extract_document_text(content: bytes, filename: str, content_type: str | Non
         ) from exc
 
 
+def _normalise_skills(raw_skills: list) -> list[dict]:
+    """Convert a list that may contain str or dict items to ExtractedSkill-compatible dicts."""
+    normalised = []
+    for item in raw_skills:
+        if isinstance(item, dict):
+            normalised.append({
+                "name": item.get("name", ""),
+                "category": item.get("category"),
+                "evidence": item.get("evidence"),
+                "confidence": float(item.get("confidence", 0.8)),
+            })
+        elif isinstance(item, str) and item.strip():
+            normalised.append({
+                "name": item.strip(),
+                "category": "Technical Skill",
+                "evidence": item.strip(),
+                "confidence": 0.8,
+            })
+    return [s for s in normalised if s["name"]]
+
+
 @router.post("/upload")
 def upload_resume(
     file: UploadFile = File(...),
     current_user: Annotated[User, Depends(get_current_user)] = None,
     db: Session = Depends(get_db),
 ):
-    if not file.filename or Path(file.filename).suffix.lower() != ".pdf":
-        raise HTTPException(status_code=400, detail="Only PDF resumes are allowed")
+    suffix = Path(file.filename or "").suffix.lower() if file.filename else ""
+    if suffix not in (".pdf", ".docx", ".txt"):
+        raise HTTPException(status_code=400, detail="Only PDF, DOCX, or TXT resumes are accepted")
 
     content = file.file.read(MAX_RESUME_BYTES + 1)
     if len(content) > MAX_RESUME_BYTES:
-        raise HTTPException(status_code=413, detail="Resume exceeds the maximum file size")
-    if not content.startswith(b"%PDF"):
+        raise HTTPException(status_code=413, detail="Resume exceeds the maximum file size (10 MB)")
+
+    if suffix == ".pdf" and not content.startswith(b"%PDF"):
         raise HTTPException(status_code=400, detail="Uploaded file is not a valid PDF")
 
     RESUME_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    stored_filename = f"{uuid4().hex}.pdf"
+    stored_filename = f"{uuid4().hex}{suffix}"
     stored_path = RESUME_UPLOAD_DIR / stored_filename
     stored_path.write_bytes(content)
 
@@ -96,7 +121,7 @@ def upload_resume(
         original_filename=file.filename,
         stored_filename=stored_filename,
         file_path=str(stored_path),
-        file_type="application/pdf",
+        file_type=file.content_type or "application/octet-stream",
         title=f"Resume for {current_user.name}",
         processing_status="processing",
     )
@@ -105,104 +130,246 @@ def upload_resume(
     db.refresh(resume_record)
 
     try:
-        text = extract_document_text(content, file.filename, "application/pdf")
+        # ── Step 1: Extract text ─────────────────────────────────────────────
+        text = extract_document_text(content, file.filename, file.content_type)
         if len(text.strip()) < 40:
-            raise ValueError("The PDF does not contain enough extractable resume text")
+            raise ValueError("The document does not contain enough extractable text. "
+                             "Make sure the PDF is not scanned/image-only.")
 
+        # ── Step 2: Deterministic skill extraction ───────────────────────────
         deterministic = resume_analyzer.analyze(text, user_id=None)
-        ai_evaluation = resume_ai.evaluate(text, deterministic)
-        if ai_evaluation.get("status") != "complete":
-            raise RuntimeError(ai_evaluation.get("message", "AI analysis is unavailable"))
+        raw_skills = deterministic.get("skills", [])
 
-        validated = ResumeAnalysis.model_validate(ai_evaluation)
+        # ── Step 3: AI enrichment via Qwen (graceful fallback when unavailable)
+        try:
+            ai_result = resume_ai.evaluate(text, deterministic)
+        except Exception as ai_exc:
+            logger.warning("AI evaluation failed, using deterministic fallback: %s", ai_exc)
+            ai_result = None
+
+        if ai_result and ai_result.get("status") == "complete":
+            # Merge AI skills with deterministic ones
+            ai_skills = _normalise_skills(ai_result.get("skills", []))
+            skill_names_seen = {s["name"].lower() for s in ai_skills}
+            for s in _normalise_skills(raw_skills):
+                if s["name"].lower() not in skill_names_seen:
+                    ai_skills.append(s)
+                    skill_names_seen.add(s["name"].lower())
+            merged = {**ai_result, "skills": ai_skills}
+        else:
+            # Pure deterministic path — no Qwen needed
+            merged = {
+                "skills": _normalise_skills(raw_skills),
+                "education": [],
+                "experience": [],
+                "internships": [],
+                "projects": [],
+                "certifications": [],
+                "achievements": [],
+                "suggested_roles": [],
+                "domains": [],
+                "status": "complete",
+                "provider": "deterministic",
+            }
+
+        # ── Step 4: Validate with Pydantic schema ────────────────────────────
+        try:
+            validated = ResumeAnalysis.model_validate(merged)
+        except ValidationError as ve:
+            logger.warning("ResumeAnalysis validation error, rebuilding: %s", ve)
+            validated = ResumeAnalysis(skills=_normalise_skills(raw_skills))
+
         analysis = skill_normalizer.validate(validated.model_dump(), text)
-        sections = vector_store._split_sections(text)
-        embedding_record = vector_store.add_document(
-            current_user.id,
-            text,
-            metadata={"resume_id": resume_record.id, "skills": analysis["skills"]},
-            section_name="full_resume",
-            resume_id=resume_record.id,
-        )
 
+        # ── Step 5: Section detection ────────────────────────────────────────
+        sections = vector_store._split_sections(text)
         for section_type, section_text in sections:
             db.add(ResumeSection(
                 resume_id=resume_record.id,
                 section_type=section_type,
                 section_text=section_text,
             ))
+
+        # ── Step 6: Skill persistence to DB ─────────────────────────────────
         persisted_skills = skill_normalizer.persist(db, resume_record.id, analysis)
-        skill_vectors = 0
-        for item in persisted_skills:
-            skill_vector = vector_store.add_document(
+
+        # ── Step 7: FAISS vector indexing (graceful — skip if ST model unavailable)
+        vectors_created = 0
+        try:
+            embedding_record = vector_store.add_document(
                 current_user.id,
-                item["name"],
-                metadata={
-                    "resume_id": resume_record.id,
-                    "type": "skill",
-                    "skill_id": item["id"],
-                    "canonical_skill": item["name"],
-                },
-                section_name=f"skill:{item['name']}",
+                text,
+                metadata={"resume_id": resume_record.id, "skills": analysis["skills"]},
+                section_name="full_resume",
                 resume_id=resume_record.id,
             )
-            skill_vectors += len(skill_vector["sections"])
-        full_embedding = next(
-            (item["embedding"] for item in embedding_record["sections"] if item["section_name"] == "full_resume"),
-            None,
-        )
+            vectors_created += len(embedding_record["sections"])
+
+            for item in persisted_skills:
+                skill_vec = vector_store.add_document(
+                    current_user.id,
+                    item["name"],
+                    metadata={
+                        "resume_id": resume_record.id,
+                        "type": "skill",
+                        "skill_id": item["id"],
+                        "canonical_skill": item["name"],
+                    },
+                    section_name=f"skill:{item['name']}",
+                    resume_id=resume_record.id,
+                )
+                vectors_created += len(skill_vec["sections"])
+        except Exception as vec_exc:
+            logger.warning("Vector indexing skipped (FAISS unavailable): %s", vec_exc)
+
+        # ── Step 8: Persist final state ──────────────────────────────────────
         resume_record.raw_text = text
         resume_record.summary = text[:500]
         resume_record.extracted_skills = [item["name"] for item in analysis["skills"]]
-        resume_record.embedding = full_embedding
         resume_record.payload = {"analysis": analysis, "skills": persisted_skills}
         resume_record.processing_status = "completed"
         db.commit()
-        logger.info("Resume processing completed resume_id=%s user_id=%s", resume_record.id, current_user.id)
-    except (ValidationError, ValueError, RuntimeError, OSError) as exc:
+        logger.info(
+            "Resume processing completed resume_id=%s user_id=%s skills=%s",
+            resume_record.id, current_user.id, len(persisted_skills)
+        )
+
+    except (ValueError, OSError) as exc:
         db.rollback()
-        failed = db.query(Resume).filter(Resume.id == resume_record.id).first()
-        if failed:
-            failed.processing_status = "failed"
-            failed.payload = {"error": str(exc)}
-            db.commit()
+        _mark_failed(db, resume_record.id, str(exc))
         raise HTTPException(status_code=422, detail=f"Resume processing failed: {exc}") from exc
+    except Exception as exc:
+        db.rollback()
+        _mark_failed(db, resume_record.id, str(exc))
+        logger.exception("Unexpected error during resume processing")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {exc}") from exc
 
     return {
-        "message": "Resume uploaded and analyzed successfully",
+        "message": "Resume uploaded and analysed successfully",
         "user_id": current_user.id,
         "resume_id": resume_record.id,
         "filename": resume_record.original_filename,
         "processing_status": resume_record.processing_status,
         "sections_detected": len(sections),
         "skills_extracted": len(persisted_skills),
-        "vectors_created": len(embedding_record["sections"]) + skill_vectors,
+        "vectors_created": vectors_created,
         "analysis": analysis,
+    }
+
+
+def _mark_failed(db: Session, resume_id: int, error: str) -> None:
+    try:
+        r = db.query(Resume).filter(Resume.id == resume_id).first()
+        if r:
+            r.processing_status = "failed"
+            r.payload = {"error": error}
+            db.commit()
+    except Exception:
+        pass
+
+
+@router.get("/", response_model=list[dict])
+def list_resumes(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """List all resumes uploaded by the current user."""
+    resumes = (
+        db.query(Resume)
+        .filter(Resume.user_id == current_user.id)
+        .order_by(Resume.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "filename": r.original_filename,
+            "processing_status": r.processing_status,
+            "skills_extracted": len(r.extracted_skills or []),
+            "created_at": r.created_at,
+        }
+        for r in resumes
+    ]
+
+
+@router.get("/{resume_id}")
+def get_resume(
+    resume_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Get full analysis of a specific resume."""
+    r = db.query(Resume).filter(
+        Resume.id == resume_id,
+        Resume.user_id == current_user.id,
+    ).first()
+    if r is None:
+        raise HTTPException(status_code=404, detail="Resume not found")
+    return {
+        "id": r.id,
+        "filename": r.original_filename,
+        "processing_status": r.processing_status,
+        "extracted_skills": r.extracted_skills or [],
+        "summary": r.summary,
+        "analysis": (r.payload or {}).get("analysis", {}),
+        "created_at": r.created_at,
     }
 
 
 @router.post("/analyze")
 def analyze_resume_text(
-    text: str,
-    current_user: Annotated[User, Depends(get_current_user)] = None,
+    body: ResumeTextRequest,
+    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
 ):
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="Empty resume text")
+    """Analyse raw resume text and return skills, career matches, and AI enrichment.
 
-    analysis = resume_analyzer.analyze(text, user_id=current_user.id)
-    recommendations = career_engine.recommend(analysis["skills"])
-    ai_evaluation = resume_ai.evaluate(text, analysis)
+    Request body: {"text": "paste your resume text here"}
+    """
+    text = body.text
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Resume text cannot be empty")
+
+    # Step 1: deterministic skill extraction
+    analysis = resume_analyzer.analyze(text, user_id=None)
+    raw_skills = analysis.get("skills", [])
+    skill_names: list[str] = [
+        (s["name"] if isinstance(s, dict) else s) for s in raw_skills if s
+    ]
+
+    # Step 2: career recommendations (graceful)
+    try:
+        recommendations = career_engine.recommend(skill_names)
+    except Exception as rec_exc:
+        logger.warning("Career recommendations failed: %s", rec_exc)
+        recommendations = []
+
+    # Step 3: AI enrichment via Qwen (graceful — skipped if model not loaded)
+    ai_payload: dict = {}
+    try:
+        ai_result = resume_ai.evaluate(text, analysis)
+        if ai_result and ai_result.get("status") == "complete":
+            ai_skills = _normalise_skills(ai_result.get("skills", []))
+            if ai_skills:
+                skill_names = [s["name"] for s in ai_skills]
+                analysis["skills"] = skill_names
+            ai_payload = {
+                k: v for k, v in ai_result.items()
+                if k not in ("status", "provider", "skills")
+            }
+    except Exception as ai_exc:
+        logger.warning("AI evaluation skipped: %s", ai_exc)
 
     return {
         "message": "Resume analysis complete",
-        "user_id": current_user.id,
-        "analysis": analysis,
+        "user_id": current_user.id if current_user else None,
+        "skills": skill_names,
         "career_recommendations": recommendations,
         "skill_gap": {
             "missing_skills": recommendations[0]["missing_skills"] if recommendations else [],
         },
-        **({"ai_evaluation": ai_evaluation} if ai_evaluation.get("status") == "complete" else {}),
+        **({"ai_evaluation": ai_payload} if ai_payload else {}),
     }
+
 
 
 @router.post("/generate", response_model=GeneratedResume)
@@ -211,25 +378,16 @@ def generate_resume(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ):
-    existing_resume = db.query(Resume.id).filter(Resume.user_id == current_user.id).first()
-    if existing_resume is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="A resume already exists for this user. Use /resume/upload or /resume/analyze.",
-        )
-
     generated = resume_ai.generate_resume(request.name, request.choice)
     if generated.get("status") != "complete":
         raise HTTPException(
             status_code=503,
             detail=generated.get("message", "CV generation is unavailable"),
         )
-
     try:
         validated = GeneratedResume.model_validate(generated)
     except ValidationError as exc:
         raise HTTPException(status_code=502, detail="AI returned an invalid CV structure") from exc
-
     return validated
 
 
@@ -239,13 +397,6 @@ def generate_resume_pdf(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ):
-    existing_resume = db.query(Resume.id).filter(Resume.user_id == current_user.id).first()
-    if existing_resume is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="A resume already exists for this user. Use /resume/upload or /resume/analyze.",
-        )
-
     generated = resume_ai.generate_resume(request.name, request.choice)
     if generated.get("status") != "complete":
         raise HTTPException(

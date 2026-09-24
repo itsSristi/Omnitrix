@@ -1,8 +1,6 @@
 from datetime import datetime
 
 from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, Text
-from pgvector.sqlalchemy import Vector
-
 from app.database.database import Base
 
 
@@ -22,6 +20,5 @@ class Resume(Base):
     raw_text = Column(Text, nullable=True)
     extracted_skills = Column(JSON, nullable=True)
     payload = Column("metadata", JSON, nullable=True, default=dict)
-    embedding = Column(Vector(64), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

@@ -1,42 +1,55 @@
 import json
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 
 class LLMService:
     def __init__(self):
         self.provider = os.getenv("AI_PROVIDER", "qwen").lower()
-        self.api_key = os.getenv("OPENAI_API_KEY")
-        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        self.qwen_model = os.getenv("QWEN_MODEL", "Qwen/Qwen2.5-1.5B-Instruct")
+        self.qwen_model = os.getenv("QWEN_MODEL", "Qwen/Qwen2.5-3B-Instruct")
         self.qwen_tokenizer = None
         self.qwen_model_instance = None
-        self.client = None
-        if self.provider == "openai" and self.api_key:
-            from openai import OpenAI
-
-            self.client = OpenAI(api_key=self.api_key)
+        self._load_attempted = False
 
     def _load_qwen(self):
         if self.qwen_model_instance is not None:
             return
+        if self._load_attempted:
+            raise RuntimeError("Qwen model unavailable")
 
         try:
             import torch
             from transformers import AutoModelForCausalLM, AutoTokenizer
         except ImportError as exc:
+            self._load_attempted = True
             raise RuntimeError(
-                "Qwen is not installed. Run: pip install -r requirements.txt"
+                "Transformers / Torch is not installed. Run: pip install -r requirements.txt"
             ) from exc
 
-        self.qwen_tokenizer = AutoTokenizer.from_pretrained(self.qwen_model)
-        dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-        self.qwen_model_instance = AutoModelForCausalLM.from_pretrained(
-            self.qwen_model,
-            torch_dtype=dtype,
-        )
-        if torch.cuda.is_available():
-            self.qwen_model_instance = self.qwen_model_instance.to("cuda")
-        self.qwen_model_instance.eval()
+        try:
+            # Check if weights already downloaded locally
+            self.qwen_tokenizer = AutoTokenizer.from_pretrained(
+                self.qwen_model,
+                trust_remote_code=True,
+                local_files_only=True,
+            )
+            dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+            self.qwen_model_instance = AutoModelForCausalLM.from_pretrained(
+                self.qwen_model,
+                torch_dtype=dtype,
+                low_cpu_mem_usage=True,
+                trust_remote_code=True,
+                local_files_only=True,
+            )
+            if torch.cuda.is_available():
+                self.qwen_model_instance = self.qwen_model_instance.to("cuda")
+            self.qwen_model_instance.eval()
+        except Exception as exc:
+            self._load_attempted = True
+            logger.info("Local Qwen weights not cached (%s); using fast deterministic inference pipeline.", exc)
+            raise RuntimeError("Qwen weights not cached locally") from exc
 
     def _qwen_json(self, system_prompt: str, payload: dict) -> dict:
         self._load_qwen()
@@ -57,7 +70,7 @@ class LLMService:
         with torch.inference_mode():
             output = self.qwen_model_instance.generate(
                 **inputs,
-                max_new_tokens=700,
+                max_new_tokens=600,
                 do_sample=False,
                 pad_token_id=self.qwen_tokenizer.eos_token_id,
             )
@@ -102,28 +115,7 @@ class LLMService:
             result["provider"] = "qwen"
             return result
 
-        if self.client is None:
-            return {
-                "status": "not_configured",
-                "message": "Set OPENAI_API_KEY to enable AI resume evaluation.",
-            }
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0.2,
-            response_format={"type": "json_object"},
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a practical technical recruiter. Return only valid JSON matching the requested output.",
-                },
-                {"role": "user", "content": json.dumps(prompt)},
-            ],
-        )
-        content = response.choices[0].message.content or "{}"
-        result = json.loads(content)
-        result["status"] = "complete"
-        return result
+        raise RuntimeError("Qwen provider is required; set AI_PROVIDER=qwen")
 
     def recommend_for_job(self, job_description: str, resume_analysis: dict) -> dict:
         prompt = {
@@ -146,29 +138,7 @@ class LLMService:
             result["provider"] = "qwen"
             return result
 
-        if self.client is None:
-            return {
-                "status": "not_configured",
-                "message": "Set OPENAI_API_KEY to enable AI job-to-resume recommendations.",
-            }
-
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0.2,
-            response_format={"type": "json_object"},
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a hiring advisor. Recommend fit between a candidate and a job with clear evidence from the resume.",
-                },
-                {"role": "user", "content": json.dumps(prompt)},
-            ],
-        )
-        content = response.choices[0].message.content or "{}"
-        result = json.loads(content)
-        result["status"] = "complete"
-        return result
+        raise RuntimeError("Qwen provider is required; set AI_PROVIDER=qwen")
 
     def generate_resume(self, name: str, user_choice: str) -> dict:
         prompt = {
@@ -204,25 +174,4 @@ class LLMService:
             result["provider"] = "qwen"
             return result
 
-        if self.client is None:
-            return {
-                "status": "not_configured",
-                "message": "Set OPENAI_API_KEY to enable CV generation.",
-            }
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0.2,
-            response_format={"type": "json_object"},
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a professional resume writer. Return only valid JSON and never invent details.",
-                },
-                {"role": "user", "content": json.dumps(prompt)},
-            ],
-        )
-        result = json.loads(response.choices[0].message.content or "{}")
-        result["status"] = "complete"
-        result["provider"] = "openai"
-        return result
+        raise RuntimeError("Qwen provider is required; set AI_PROVIDER=qwen")

@@ -17,18 +17,34 @@ DEFAULT_DATABASE_URL = f"sqlite:///{BASE_DIR / 'app.db'}"
 # Get the database URL
 DATABASE_URL = os.getenv("DATABASE_URL") or DEFAULT_DATABASE_URL
 
-# Neon may provide either postgres:// or postgresql:// URLs. SQLAlchemy's
-# psycopg2 dialect uses the postgresql:// form.
+# Neon may provide either postgres:// or postgresql:// URLs.
+# SQLAlchemy's psycopg2 dialect uses the postgresql:// form.
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL.removeprefix("postgres://")
+    DATABASE_URL = (
+        "postgresql+psycopg2://"
+        + DATABASE_URL.removeprefix("postgres://")
+    )
 elif DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL.removeprefix("postgresql://")
+    DATABASE_URL = (
+        "postgresql+psycopg2://"
+        + DATABASE_URL.removeprefix("postgresql://")
+    )
+
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is not configured in the .env file."
+    )
 
 
 # Create SQLAlchemy engine
-engine_kwargs = {"pool_pre_ping": True}
+engine_kwargs = {
+    "pool_pre_ping": True
+}
+
 if DATABASE_URL.startswith("sqlite"):
-    engine_kwargs["connect_args"] = {"check_same_thread": False}
+    engine_kwargs["connect_args"] = {
+        "check_same_thread": False
+    }
 
 engine = create_engine(
     DATABASE_URL,
@@ -41,7 +57,7 @@ engine = create_engine(
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
-    bind=engine
+    bind=engine,
 )
 
 

@@ -1,92 +1,23 @@
-from sqlalchemy import (
-    Column,
-    Integer,
-    Float,
-    Boolean,
-    DateTime,
-    ForeignKey,
-    String,
-    Enum as SQLEnum
-)
-
+from datetime import datetime
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import relationship
 
 from app.database.database import Base
 
-from app.database.enums import (
-    QuestionStatus
-)
 
+class Answer(Base):
+    __tablename__ = "answers"
 
-class AssessmentAnswer(Base):
+    id = Column(Integer, primary_key=True, index=True)
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    answer_text = Column(Text, nullable=True)
+    audio_path = Column(String(500), nullable=True)
+    score = Column(Float, nullable=True)
+    feedback = Column(Text, nullable=True)
+    keywords_detected = Column(JSON, nullable=True)
+    time_taken_seconds = Column(Integer, default=0, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=True)
 
-    __tablename__ = "assessment_answers"
-
-    id = Column(
-        Integer,
-        primary_key=True,
-        index=True
-    )
-
-    assessment_id = Column(
-        Integer,
-        ForeignKey("assessments.id"),
-        nullable=False
-    )
-
-    question_id = Column(
-        Integer,
-        ForeignKey("questions.id"),
-        nullable=False
-    )
-
-    section_id = Column(
-        Integer,
-        ForeignKey(
-            "assessment_section_results.id"
-        ),
-        nullable=False
-    )
-
-    selected_option = Column(
-        String(1),
-        nullable=True
-    )
-
-    status = Column(
-        SQLEnum(QuestionStatus),
-        default=QuestionStatus.UNSEEN,
-        nullable=False
-    )
-
-    visited_at = Column(
-        DateTime(timezone=True),
-        nullable=True
-    )
-
-    answered_at = Column(
-        DateTime(timezone=True),
-        nullable=True
-    )
-
-    time_spent_seconds = Column(
-        Integer,
-        default=0,
-        nullable=False
-    )
-
-    is_correct = Column(
-        Boolean,
-        nullable=True
-    )
-
-    marks_awarded = Column(
-        Float,
-        default=0.0,
-        nullable=False
-    )
-
-    assessment = relationship(
-        "Assessment",
-        back_populates="answers"
-    )
+    question = relationship("Question", backref="answers")
+    user = relationship("User", backref="answers")

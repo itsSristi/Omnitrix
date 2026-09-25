@@ -175,3 +175,50 @@ class LLMService:
             return result
 
         raise RuntimeError("Qwen provider is required; set AI_PROVIDER=qwen")
+
+    def generate_interview_final_report(self, interview_context: dict, transcript_history: list) -> dict:
+        """10. Final evaluation: Generates comprehensive final report using the entire interview history with Qwen LLM."""
+        prompt = {
+            "interview_context": interview_context,
+            "interview_transcript_history": transcript_history,
+            "required_output": {
+                "overall_score": 0.0,
+                "technical_score": 0.0,
+                "problem_solving_score": 0.0,
+                "communication_score": 0.0,
+                "overall_performance": "Detailed narrative summary of candidate's overall performance across the interview.",
+                "technical_knowledge": "Evaluation of candidate's core technical understanding and accuracy.",
+                "problem_solving": "Evaluation of candidate's reasoning, problem-solving approach, and algorithmic depth.",
+                "communication": "Evaluation of clarity, structure, and communication effectiveness.",
+                "strong_areas": ["Key strong skill or area 1", "Key strong skill 2"],
+                "weak_areas": ["Weak area or gap 1", "Weak area 2"],
+                "topics_that_need_improvement": ["Specific concept 1", "Specific concept 2"],
+                "question_wise_performance": [
+                    {
+                        "question_id": 0,
+                        "question_text": "...",
+                        "candidate_answer": "...",
+                        "score": 0.0,
+                        "feedback": "...",
+                        "keywords_detected": [],
+                        "time_taken_seconds": 0,
+                    }
+                ],
+                "recommended_preparation_topics": ["Actionable preparation topic 1", "Actionable preparation topic 2"],
+            },
+        }
+        if self.provider == "qwen":
+            system_prompt = (
+                "You are a Principal Engineering Interviewer and Hiring Committee Chair. "
+                "Analyze the candidate's entire interview history (all questions asked and candidate answers given). "
+                "Provide an exhaustive, balanced evaluation covering Overall Performance, Technical Knowledge, "
+                "Problem-Solving, Communication, Strong Areas, Weak Areas, Topics that need improvement, "
+                "Question-wise performance, and Recommended preparation topics. "
+                "Return only valid JSON matching the required_output format."
+            )
+            result = self._qwen_json(system_prompt, prompt)
+            result["status"] = "complete"
+            result["provider"] = "qwen"
+            return result
+
+        raise RuntimeError("Qwen provider is required; set AI_PROVIDER=qwen")

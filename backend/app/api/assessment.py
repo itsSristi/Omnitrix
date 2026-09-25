@@ -13,11 +13,13 @@ from app.database.enums import (
     AssessmentMode,
 )
 
-from app.models.assessment import Assessment
-from app.models.assessment_section import AssessmentSectionResult
-from app.models.answer import AssessmentAnswer
+from app.models.assessment import (
+    Assessment,
+    AssessmentAnswer,
+    AssessmentResult,
+    AssessmentSectionResult,
+)
 from app.models.question import Question
-from app.models.result import AssessmentResult
 
 from app.schemas.assessment import (
     AssessmentInstructionsResponse,

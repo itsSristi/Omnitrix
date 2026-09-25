@@ -1,59 +1,22 @@
-from sqlalchemy import (
-    Column,
-    Integer,
-    Float,
-    DateTime,
-    ForeignKey
-)
-
-from sqlalchemy.sql import func
+from datetime import datetime
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, JSON, Text
+from sqlalchemy.orm import relationship
 
 from app.database.database import Base
 
 
-class AssessmentResult(Base):
+class InterviewResult(Base):
+    __tablename__ = "interview_results"
 
-    __tablename__ = "assessment_results"
+    id = Column(Integer, primary_key=True, index=True)
+    interview_id = Column(Integer, ForeignKey("interviews.id"), nullable=False, unique=True)
+    overall_score = Column(Float, nullable=True)
+    technical_score = Column(Float, nullable=True)
+    communication_score = Column(Float, nullable=True)
+    confidence_score = Column(Float, nullable=True)
+    summary = Column(Text, nullable=True)
+    strengths = Column(JSON, nullable=True)
+    improvements = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=True)
 
-    id = Column(
-        Integer,
-        primary_key=True,
-        index=True
-    )
-
-    assessment_id = Column(
-        Integer,
-        ForeignKey("assessments.id"),
-        nullable=False,
-        unique=True
-    )
-
-    user_id = Column(
-        Integer,
-        ForeignKey("users.id"),
-        nullable=False
-    )
-
-    total_score = Column(
-        Float,
-        default=0.0,
-        nullable=False
-    )
-
-    maximum_score = Column(
-        Float,
-        default=0.0,
-        nullable=False
-    )
-
-    percentage = Column(
-        Float,
-        default=0.0,
-        nullable=False
-    )
-
-    created_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False
-    )
+    interview = relationship("Interview", backref="result", uselist=False)

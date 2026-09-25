@@ -1,47 +1,37 @@
-from datetime import datetime
-
-from pydantic import BaseModel
-
-from app.database.enums import (
-    AssessmentSection,
-    QuestionStatus,
-)
+from typing import Optional
+from pydantic import BaseModel, ConfigDict
 
 
-# ============================================================
-# ASSESSMENT QUESTION RESPONSE
-# ============================================================
-
-class AssessmentQuestionResponse(BaseModel):
-    id: int
-    section: AssessmentSection
+class QuestionBase(BaseModel):
+    section: Optional[str] = "TECHNICAL"
     question_text: str
-
-    option_a: str
-    option_b: str
-    option_c: str
-    option_d: str
-
-    # Question configuration
-    difficulty: str
-    expected_time_seconds: int
-    positive_mark: float
-    negative_mark: float
-
-    # User answer state
-    selected_option: str | None
-    status: QuestionStatus
-    visited_at: datetime | None
-    answered_at: datetime | None
-    time_spent_seconds: int
+    option_a: Optional[str] = None
+    option_b: Optional[str] = None
+    option_c: Optional[str] = None
+    option_d: Optional[str] = None
+    correct_option: Optional[str] = None
+    difficulty: Optional[str] = "MEDIUM"
+    expected_time_seconds: Optional[int] = 60
+    positive_mark: Optional[float] = 1.0
+    negative_mark: Optional[float] = 0.0
+    is_active: Optional[bool] = True
 
 
-# ============================================================
-# SECTION QUESTIONS RESPONSE
-# ============================================================
+class QuestionCreate(QuestionBase):
+    pass
 
-class SectionQuestionsResponse(BaseModel):
-    assessment_id: int
-    section: AssessmentSection
-    deadline: datetime | None
-    questions: list[AssessmentQuestionResponse]
+
+class QuestionResponse(QuestionBase):
+    id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class QuestionCandidateView(BaseModel):
+    id: int
+    section: Optional[str] = None
+    question_text: str
+    difficulty: Optional[str] = None
+    expected_time_seconds: Optional[int] = 60
+
+    model_config = ConfigDict(from_attributes=True)

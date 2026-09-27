@@ -40,17 +40,20 @@ class InterviewEvaluator:
         """Evaluates a single candidate answer using Qwen LLM or deterministic rubric validation."""
         clean_ans = (answer_text or "").strip()
         word_count = len(clean_ans.split())
+        lower_ans = clean_ans.lower()
 
-        if word_count < 3:
+        # Direct detection of inability to answer or trivial responses
+        ignorance_phrases = ["no clue", "no idea", "i do not know", "i don't know", "dont know", "skip", "have no clue", "not sure", "cannot answer", "can't answer"]
+        if word_count < 3 or any(p in lower_ans for p in ignorance_phrases):
             return {
                 "score": 15.0,
-                "correctness": 15.0,
-                "technical_accuracy": 15.0,
+                "correctness": 10.0,
+                "technical_accuracy": 10.0,
                 "reasoning_depth": 10.0,
-                "relevance": 20.0,
+                "relevance": 10.0,
                 "completeness": 10.0,
                 "communication_clarity": 20.0,
-                "feedback": "Answer is too brief. Please explain your approach with concrete examples and reasoning.",
+                "feedback": "Answer demonstrates insufficient technical knowledge or indicates inability to address the question.",
                 "keywords_detected": [],
             }
 

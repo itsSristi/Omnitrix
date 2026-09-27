@@ -67,6 +67,32 @@ class InterviewAI:
     def adapt_difficulty(self, current_difficulty: DifficultyLevel, score: float) -> DifficultyLevel:
         return self.question_generator.adjust_difficulty(current_difficulty, score)
 
+    def analyze_upgradation(
+        self,
+        current_difficulty: DifficultyLevel,
+        score: float,
+        is_skipped: bool = False,
+    ) -> tuple[DifficultyLevel, bool, Optional[str], str]:
+        return self.question_generator.analyze_upgradation(current_difficulty, score, is_skipped=is_skipped)
+
+    def get_next_question(
+        self,
+        db: Session,
+        user_id: Optional[int] = None,
+        target_difficulty: DifficultyLevel = DifficultyLevel.MEDIUM,
+        role: str = "Software Engineer",
+        topics: Optional[List[str]] = None,
+        candidate_context: Optional[dict] = None,
+    ) -> Question:
+        return self.question_generator.get_next_adaptive_question(
+            db=db,
+            user_id=user_id,
+            target_difficulty=target_difficulty,
+            role=role,
+            topics=topics,
+            candidate_context=candidate_context,
+        )
+
     def generate_followup(
         self,
         db: Session,

@@ -1,5 +1,5 @@
-from typing import Optional
-from pydantic import BaseModel, ConfigDict
+from typing import Any, Optional
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class QuestionBase(BaseModel):
@@ -33,5 +33,17 @@ class QuestionCandidateView(BaseModel):
     question_text: str
     difficulty: Optional[str] = None
     expected_time_seconds: Optional[int] = 60
+    audio_url: Optional[str] = None
+
+    @field_validator("section", "difficulty", mode="before")
+    @classmethod
+    def transform_enum_to_str(cls, v: Any) -> Optional[str]:
+        if v is None:
+            return None
+        if hasattr(v, "value"):
+            return str(v.value)
+        return str(v)
 
     model_config = ConfigDict(from_attributes=True)
+
+

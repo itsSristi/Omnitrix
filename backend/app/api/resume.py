@@ -155,21 +155,34 @@ def upload_resume(
                 if s["name"].lower() not in skill_names_seen:
                     ai_skills.append(s)
                     skill_names_seen.add(s["name"].lower())
-            merged = {**ai_result, "skills": ai_skills}
+            
+            merged = {
+                "skills": ai_skills,
+                "education": ai_result.get("education") or deterministic.get("education", []),
+                "experience": ai_result.get("experience") or deterministic.get("experience", []),
+                "internships": ai_result.get("internships") or deterministic.get("internships", []),
+                "projects": ai_result.get("projects") or deterministic.get("projects", []),
+                "certifications": ai_result.get("certifications") or deterministic.get("certifications", []),
+                "achievements": ai_result.get("achievements") or deterministic.get("achievements", []),
+                "suggested_roles": ai_result.get("suggested_roles") or deterministic.get("suggested_roles", []),
+                "domains": ai_result.get("domains") or deterministic.get("domains", []),
+                "status": "complete",
+                "provider": ai_result.get("provider", "qwen"),
+            }
         else:
-            # Pure deterministic path — no Qwen needed
+            # Deterministic path populated with rich parsed sections
             merged = {
                 "skills": _normalise_skills(raw_skills),
-                "education": [],
-                "experience": [],
-                "internships": [],
-                "projects": [],
-                "certifications": [],
-                "achievements": [],
-                "suggested_roles": [],
-                "domains": [],
+                "education": deterministic.get("education", []),
+                "experience": deterministic.get("experience", []),
+                "internships": deterministic.get("internships", []),
+                "projects": deterministic.get("projects", []),
+                "certifications": deterministic.get("certifications", []),
+                "achievements": deterministic.get("achievements", []),
+                "suggested_roles": deterministic.get("suggested_roles", []),
+                "domains": deterministic.get("domains", []),
                 "status": "complete",
-                "provider": "deterministic",
+                "provider": "deterministic-nlp",
             }
 
         # ── Step 4: Validate with Pydantic schema ────────────────────────────
@@ -177,7 +190,17 @@ def upload_resume(
             validated = ResumeAnalysis.model_validate(merged)
         except ValidationError as ve:
             logger.warning("ResumeAnalysis validation error, rebuilding: %s", ve)
-            validated = ResumeAnalysis(skills=_normalise_skills(raw_skills))
+            validated = ResumeAnalysis(
+                skills=_normalise_skills(raw_skills),
+                education=deterministic.get("education", []),
+                experience=deterministic.get("experience", []),
+                internships=deterministic.get("internships", []),
+                projects=deterministic.get("projects", []),
+                certifications=deterministic.get("certifications", []),
+                achievements=deterministic.get("achievements", []),
+                suggested_roles=deterministic.get("suggested_roles", []),
+                domains=deterministic.get("domains", []),
+            )
 
         analysis = skill_normalizer.validate(validated.model_dump(), text)
 
@@ -321,7 +344,9 @@ def analyze_resume_text(
     body: ResumeTextRequest,
     current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
 ):
-    """Analyse raw resume text and return skills, career matches, and AI enrichment.
+    """Analyse raw resume text and return skills, education, experience, projects,
+
+    certifications, achievements, suggested roles, domains, career matches, and AI enrichment.
 
     Request body: {"text": "paste your resume text here"}
     """
@@ -329,21 +354,21 @@ def analyze_resume_text(
     if not text.strip():
         raise HTTPException(status_code=400, detail="Resume text cannot be empty")
 
-    # Step 1: deterministic skill extraction
+    # Step 1: comprehensive deterministic skill and section extraction
     analysis = resume_analyzer.analyze(text, user_id=None)
     raw_skills = analysis.get("skills", [])
     skill_names: list[str] = [
         (s["name"] if isinstance(s, dict) else s) for s in raw_skills if s
     ]
 
-    # Step 2: career recommendations (graceful)
+    # Step 2: career recommendations
     try:
         recommendations = career_engine.recommend(skill_names)
     except Exception as rec_exc:
         logger.warning("Career recommendations failed: %s", rec_exc)
         recommendations = []
 
-    # Step 3: AI enrichment via Qwen (graceful — skipped if model not loaded)
+    # Step 3: AI enrichment via Qwen/Gemini or rich semantic analysis
     ai_payload: dict = {}
     try:
         ai_result = resume_ai.evaluate(text, analysis)
@@ -363,6 +388,14 @@ def analyze_resume_text(
         "message": "Resume analysis complete",
         "user_id": current_user.id if current_user else None,
         "skills": skill_names,
+        "education": analysis.get("education", []),
+        "experience": analysis.get("experience", []),
+        "internships": analysis.get("internships", []),
+        "projects": analysis.get("projects", []),
+        "certifications": analysis.get("certifications", []),
+        "achievements": analysis.get("achievements", []),
+        "suggested_roles": analysis.get("suggested_roles", []),
+        "domains": analysis.get("domains", []),
         "career_recommendations": recommendations,
         "skill_gap": {
             "missing_skills": recommendations[0]["missing_skills"] if recommendations else [],

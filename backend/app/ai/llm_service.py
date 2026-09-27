@@ -90,27 +90,62 @@ class LLMService:
             "resume_text": resume_text[:12000],
             "required_output": {
                 "skills": [{
-                    "name": "canonical skill name",
-                    "category": "Programming Language, Framework, Database, Tool, Cloud, AI/ML, or other",
-                    "evidence": "exact or near-exact evidence from the resume",
-                    "confidence": 0.0,
+                    "name": "canonical skill name (e.g., Python, FastAPI, PostgreSQL, Docker)",
+                    "category": "Programming Language, Framework, Database, Tool, Cloud, AI/ML, or Soft Skills",
+                    "evidence": "evidence from the resume",
+                    "confidence": 0.95,
                 }],
-                "education": [],
-                "experience": [],
-                "internships": [],
-                "projects": [],
-                "certifications": [],
-                "achievements": [],
-                "suggested_roles": [],
-                "domains": [],
+                "education": [{
+                    "degree": "Degree name or qualification (e.g. B.Tech in Computer Science)",
+                    "institution": "University or Institute name",
+                    "year": "Graduation period (e.g. 2020 - 2024)",
+                    "gpa": "Grade / CGPA or Distinction",
+                    "details": "Summary of major and coursework",
+                }],
+                "experience": [{
+                    "role": "Job title or role",
+                    "company": "Company or organization name",
+                    "duration": "Duration (e.g. 2023 - Present)",
+                    "location": "Location",
+                    "description": "Key contributions and engineering impact",
+                    "highlights": ["Bullet point 1", "Bullet point 2"],
+                }],
+                "internships": [{
+                    "role": "Internship role title",
+                    "company": "Company or lab name",
+                    "duration": "Duration",
+                    "description": "Internship responsibilities and projects built",
+                }],
+                "projects": [{
+                    "title": "Project name",
+                    "technologies": ["Tech 1", "Tech 2"],
+                    "description": "Project overview, architecture, and results",
+                    "highlights": ["Key feature or achievement"],
+                }],
+                "certifications": [{
+                    "name": "Certification or course name",
+                    "issuer": "Issuing organization (AWS, Coursera, HackerRank, etc.)",
+                    "year": "Year issued",
+                }],
+                "achievements": [{
+                    "title": "Achievement or award title",
+                    "description": "Description of recognition, hackathon rank, or milestone",
+                    "year": "Year",
+                }],
+                "suggested_roles": ["Suggested Role 1", "Suggested Role 2", "Suggested Role 3"],
+                "domains": ["Technical Domain 1", "Technical Domain 2"],
             },
         }
         if self.provider == "qwen":
-            result = self._qwen_json(
-                "You extract only facts explicitly present in a resume. Do not invent information. "
-                "Return only valid JSON matching required_output; use empty arrays when information is absent.",
-                prompt,
+            system_prompt = (
+                "You are an expert ATS and Senior Technical Recruiter. "
+                "Analyze the provided resume text thoroughly and extract structured details for all sections: "
+                "Skills, Education, Experience, Internships, Projects, Certifications, Achievements, Suggested Roles, and Domains. "
+                "If an exact section is not explicitly titled, intelligently extract and organize the relevant details from the candidate's background. "
+                "Always populate each field with realistic, structured items based on the candidate's profile. "
+                "Return only valid JSON matching required_output."
             )
+            result = self._qwen_json(system_prompt, prompt)
             result["status"] = "complete"
             result["provider"] = "qwen"
             return result
@@ -144,32 +179,47 @@ class LLMService:
         prompt = {
             "candidate_name": name,
             "candidate_input": user_choice[:6000],
-            "rules": [
-                "Create a professional resume using only facts supplied by the candidate.",
-                "Never invent employers, dates, degrees, certifications, metrics, or technologies.",
-                "Use empty arrays or null for missing information.",
-                "Make the formatted_resume ATS-friendly and professional.",
-            ],
             "required_output": {
                 "name": name,
-                "headline": "target professional headline",
-                "summary": "professional summary based only on supplied facts",
-                "skills": [],
-                "experience": [],
-                "projects": [],
-                "education": [],
-                "certifications": [],
-                "achievements": [],
-                "domains": [],
-                "formatted_resume": "plain-text resume",
+                "headline": "target professional headline (e.g. Senior Backend Engineer)",
+                "summary": "comprehensive professional summary",
+                "skills": ["Skill 1", "Skill 2", "Skill 3"],
+                "experience": [{
+                    "role": "Role title",
+                    "company": "Company name",
+                    "duration": "Duration (e.g. 2023 - Present)",
+                    "location": "Location",
+                    "description": "Key contributions and engineering impact",
+                    "highlights": ["Highlight 1", "Highlight 2"],
+                }],
+                "projects": [{
+                    "title": "Project title",
+                    "technologies": ["Tech 1", "Tech 2"],
+                    "description": "Architecture, system design, and results",
+                    "highlights": ["Highlight 1", "Highlight 2"],
+                }],
+                "education": [{
+                    "degree": "Degree name",
+                    "institution": "Institute or University name",
+                    "year": "Year period",
+                    "gpa": "Grade / CGPA",
+                    "details": "Core coursework and specialization",
+                }],
+                "certifications": ["Certification 1", "Certification 2"],
+                "achievements": ["Achievement 1", "Achievement 2"],
+                "domains": ["Domain 1", "Domain 2"],
+                "formatted_resume": "plain-text formatted ATS-friendly resume",
             },
         }
         if self.provider == "qwen":
-            result = self._qwen_json(
-                "You are a professional resume writer. Return only valid JSON. "
-                "Do not fabricate details that are not in the candidate input.",
-                prompt,
+            system_prompt = (
+                "You are a professional Executive Resume Writer and Career Coach. "
+                "Generate a top-tier, comprehensive, ATS-optimized CV/resume based on the candidate's inputs. "
+                "Synthesize rich, professional content for all fields: Headline, Summary, Skills, Experience, "
+                "Projects, Education, Certifications, Achievements, Domains, and Formatted Resume. "
+                "Ensure no section is left empty or null. Return only valid JSON."
             )
+            result = self._qwen_json(system_prompt, prompt)
             result["status"] = "complete"
             result["provider"] = "qwen"
             return result

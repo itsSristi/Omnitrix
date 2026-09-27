@@ -42,12 +42,13 @@ class CertificateService:
                 score_pct = float(asm.percentage or 0.0)
                 stars_awarded = 5 if score_pct >= 90 else (4 if score_pct >= 80 else (3 if score_pct >= 65 else (2 if score_pct >= 45 else 1)))
 
+                recipient_name = getattr(user, "name", None) or getattr(user, "full_name", None) or user.email.split("@")[0].title()
                 certificates.append(
                     CertificateItem(
                         id=f"cert_{asm.id}",
                         certificate_number=cert_num,
                         title="Certificate of Assessment Completion",
-                        recipient_name=user.full_name or user.email.split("@")[0].title(),
+                        recipient_name=recipient_name,
                         recipient_email=user.email,
                         assessment_id=asm.id,
                         assessment_title=f"{asm.assessment_type or 'Technical'} Engineering Assessment",
@@ -64,12 +65,13 @@ class CertificateService:
             # Generate provisional competency certificate based on user onboarding & profile
             cert_hash = hashlib.sha256(f"CERT-PROV-{user.id}-{user.created_at}".encode()).hexdigest()[:10].upper()
             cert_num = f"OMNI-{datetime.utcnow().year}-{cert_hash}"
+            recipient_name = getattr(user, "name", None) or getattr(user, "full_name", None) or user.email.split("@")[0].title()
             certificates.append(
                 CertificateItem(
                     id="cert_provisional",
                     certificate_number=cert_num,
                     title="Certificate of Engineering Competency",
-                    recipient_name=user.full_name or user.email.split("@")[0].title(),
+                    recipient_name=recipient_name,
                     recipient_email=user.email,
                     assessment_id=None,
                     assessment_title="AI Engineering Evaluation & Profile Mastery",
@@ -104,7 +106,7 @@ class CertificateService:
             )
 
         badge_info = self.badge_service.get_user_badges_and_level(db, user)
-        recipient_name = user.full_name or user.email.split("@")[0].title()
+        recipient_name = getattr(user, "name", None) or getattr(user, "full_name", None) or user.email.split("@")[0].title()
         current_level_title = badge_info.level_info.level_title
 
         if asm:

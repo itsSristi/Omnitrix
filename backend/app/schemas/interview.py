@@ -9,7 +9,7 @@ class InterviewStartRequest(BaseModel):
     role: Optional[str] = "Software Engineer"
     job_id: Optional[int] = None
     interview_type: Optional[str] = "TECHNICAL"  # TECHNICAL, HR, BEHAVIORAL, SYSTEM_DESIGN
-    difficulty: Optional[str] = "MEDIUM"  # EASY, MEDIUM, HARD
+    difficulty: Optional[str] = "EASY"  # Starts at EASY by default
     target_company: Optional[str] = None
     resume_id: Optional[int] = None
     topics: Optional[List[str]] = None
@@ -22,7 +22,8 @@ class InterviewStartResponse(BaseModel):
     status: str
     target_role: Optional[str] = None
     target_company: Optional[str] = None
-    current_difficulty: str = "MEDIUM"
+    current_difficulty: str = "EASY"
+    first_question: Optional[QuestionCandidateView] = None
     questions: List[QuestionCandidateView]
     created_at: datetime
 
@@ -36,35 +37,7 @@ class AnswerSubmitRequest(BaseModel):
     time_taken_seconds: Optional[int] = 60
     audio_path: Optional[str] = None
     generate_followup: Optional[bool] = False
-
-
-class AnswerSubmitResponse(BaseModel):
-    answer_id: int
-    question_id: Optional[int] = None
-    score: float
-    correctness: Optional[float] = None
-    technical_accuracy: Optional[float] = None
-    reasoning_depth: Optional[float] = None
-    relevance: Optional[float] = None
-    completeness: Optional[float] = None
-    communication_clarity: Optional[float] = None
-    feedback: str
-    keywords_detected: List[str] = []
-    time_taken_seconds: int = 0
-    adapted_difficulty: Optional[str] = None
-    followup_question: Optional[QuestionCandidateView] = None
-
-
-class FollowupQuestionRequest(BaseModel):
-    question_id: Optional[int] = None
-    question_text: str
-    candidate_answer: str
-    role: Optional[str] = "Software Engineer"
-    difficulty: Optional[str] = "MEDIUM"
-
-
-class TTSAudioRequest(BaseModel):
-    text: str
+    is_skipped: Optional[bool] = False
 
 
 class QuestionPerformanceItem(BaseModel):
@@ -100,6 +73,40 @@ class InterviewCompleteResponse(BaseModel):
     completed_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AnswerSubmitResponse(BaseModel):
+    answer_id: int
+    question_id: Optional[int] = None
+    score: float
+    correctness: Optional[float] = None
+    technical_accuracy: Optional[float] = None
+    reasoning_depth: Optional[float] = None
+    relevance: Optional[float] = None
+    completeness: Optional[float] = None
+    communication_clarity: Optional[float] = None
+    feedback: str
+    keywords_detected: List[str] = []
+    time_taken_seconds: int = 0
+    adapted_difficulty: Optional[str] = None
+    upgradation_analysis: Optional[str] = None
+    interview_stopped: bool = False
+    stop_reason: Optional[str] = None  # None, INCORRECT_ANSWER, SKIPPED_QUESTION, INTERVIEW_COMPLETED
+    next_question: Optional[QuestionCandidateView] = None
+    followup_question: Optional[QuestionCandidateView] = None
+    final_report: Optional[InterviewCompleteResponse] = None
+
+
+class FollowupQuestionRequest(BaseModel):
+    question_id: Optional[int] = None
+    question_text: str
+    candidate_answer: str
+    role: Optional[str] = "Software Engineer"
+    difficulty: Optional[str] = "MEDIUM"
+
+
+class TTSAudioRequest(BaseModel):
+    text: str
 
 
 class InterviewHistoryItem(BaseModel):

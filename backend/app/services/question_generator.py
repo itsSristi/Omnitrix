@@ -142,26 +142,112 @@ class QuestionGeneratorService:
             logger.info("RAG context query skipped: %s", exc)
             return ""
 
-    def adjust_difficulty(self, current_difficulty: DifficultyLevel, score: float) -> DifficultyLevel:
-        """Adaptive Questioning:
+    def analyze_upgradation(
+        self,
+        current_difficulty: DifficultyLevel,
+        score: float,
+        is_skipped: bool = False,
+    ) -> tuple[DifficultyLevel, bool, Optional[str], str]:
+        """Adaptive Upgradation & Stopping Analysis:
 
-        - Strong answer (score >= 78.0) -> Increase difficulty
-        - Weak answer (score < 50.0) -> Reduce difficulty
-        - Moderate answer -> Maintain difficulty
+        Returns: (new_difficulty, should_stop, stop_reason, analysis_text)
+        - If is_skipped -> Stop immediately.
+        - If score < 50.0 -> Incorrect answer -> Stop immediately.
+        - If score >= 50.0 -> Correct answer -> Upgrade difficulty level (EASY -> MEDIUM -> HARD).
         """
-        if score >= 78.0:
-            if current_difficulty == DifficultyLevel.EASY:
-                return DifficultyLevel.MEDIUM
-            elif current_difficulty == DifficultyLevel.MEDIUM:
-                return DifficultyLevel.HARD
-            return DifficultyLevel.HARD
-        elif score < 50.0:
-            if current_difficulty == DifficultyLevel.HARD:
-                return DifficultyLevel.MEDIUM
-            elif current_difficulty == DifficultyLevel.MEDIUM:
-                return DifficultyLevel.EASY
-            return DifficultyLevel.EASY
-        return current_difficulty
+        if is_skipped:
+            return (
+                current_difficulty,
+                True,
+                "SKIPPED_QUESTION",
+                "Interview concluded: Question was skipped. Comprehensive evaluation report generated.",
+            )
+
+        if score < 50.0:
+            return (
+                current_difficulty,
+                True,
+                "INCORRECT_ANSWER",
+                f"Interview concluded: Response score ({score:.1f}/100) is below the passing threshold (50.0). Final evaluation report generated.",
+            )
+
+        # Correct answer -> Upgrade level
+        if current_difficulty == DifficultyLevel.EASY:
+            new_diff = DifficultyLevel.MEDIUM
+            analysis = "Level UPGRADED from Easy to Medium! Your response demonstrated clear fundamental accuracy. Advancing to intermediate level."
+        elif current_difficulty == DifficultyLevel.MEDIUM:
+            new_diff = DifficultyLevel.HARD
+            analysis = "Level UPGRADED from Medium to Hard! Strong technical depth and problem-solving. Advancing to advanced architectural challenge."
+        else:
+            new_diff = DifficultyLevel.HARD
+            analysis = "Outstanding performance! Maintained Advanced Hard tier with high technical precision."
+
+        return new_diff, False, None, analysis
+
+    def adjust_difficulty(self, current_difficulty: DifficultyLevel, score: float) -> DifficultyLevel:
+        """Adaptive Questioning upgrade."""
+        new_diff, _, _, _ = self.analyze_upgradation(current_difficulty, score)
+        return new_diff
+
+    def get_next_adaptive_question(
+        self,
+        db: Session,
+        user_id: Optional[int] = None,
+        target_difficulty: DifficultyLevel = DifficultyLevel.MEDIUM,
+        role: str = "Software Engineer",
+        topics: Optional[List[str]] = None,
+        candidate_context: Optional[dict] = None,
+    ) -> Question:
+        """Retrieve or generate the next unseen question at the upgraded difficulty level."""
+        # Find questions previously answered by this user
+        previously_answered_ids = set()
+        if user_id:
+            ans_rows = db.query(Answer.question_id).filter(Answer.user_id == user_id, Answer.question_id.isnot(None)).all()
+            previously_answered_ids = {r[0] for r in ans_rows if r[0]}
+
+        # Query DB for unseen question at target difficulty
+        query = db.query(Question).filter(
+            Question.is_active == True,
+            Question.difficulty == target_difficulty,
+        )
+        if previously_answered_ids:
+            query = query.filter(Question.id.notin_(previously_answered_ids))
+
+        next_q = query.order_by(func.random()).first()
+        if next_q:
+            return next_q
+
+        # If none in DB, generate one at target difficulty
+        skills = (candidate_context or {}).get("skills", ["Python", "FastAPI", "PostgreSQL"])
+        generated_list = self._generate_ai_questions(
+            role=role,
+            difficulty=target_difficulty.value,
+            topics=topics or ["Engineering Architecture", "Data Structures", "System Design"],
+            candidate_context=candidate_context or {"skills": skills},
+            target_company=None,
+            count=1,
+            avoid_questions=[],
+        )
+
+        q_item = generated_list[0]
+        new_q = Question(
+            section=map_topic_to_section(q_item.get("section", "PROFESSIONAL_KNOWLEDGE")),
+            question_text=q_item["question_text"],
+            option_a="N/A",
+            option_b="N/A",
+            option_c="N/A",
+            option_d="N/A",
+            correct_option="A",
+            difficulty=target_difficulty,
+            expected_time_seconds=q_item.get("expected_time_seconds", 90),
+            positive_mark=1.0,
+            negative_mark=0.0,
+            is_active=True,
+        )
+        db.add(new_q)
+        db.commit()
+        db.refresh(new_q)
+        return new_q
 
     def prepare_interview_questions(
         self,

@@ -1,6 +1,9 @@
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, List, Optional
+from uuid import uuid4
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.ai.interview_ai import InterviewAI
@@ -29,6 +32,23 @@ from app.schemas.question import QuestionCandidateView
 router = APIRouter(prefix="/interviews", tags=["Interviews"])
 interview_ai = InterviewAI()
 
+AUDIO_DIR = Path(__file__).resolve().parents[2] / "uploads" / "audio"
+AUDIO_ANSWERS_DIR = AUDIO_DIR / "answers"
+AUDIO_QUESTIONS_DIR = AUDIO_DIR / "questions"
+AUDIO_ANSWERS_DIR.mkdir(parents=True, exist_ok=True)
+AUDIO_QUESTIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _build_question_view(q: Any, interview_id: Optional[int] = None) -> Optional[QuestionCandidateView]:
+    """Construct a candidate question view with automatic TTS audio URL populated."""
+    if not q:
+        return None
+    view = QuestionCandidateView.model_validate(q)
+    if view.id and view.id > 0:
+        view.audio_url = f"/interviews/questions/{view.id}/audio"
+    return view
+
+
 
 def get_db():
     db = SessionLocal()
@@ -38,17 +58,50 @@ def get_db():
         db.close()
 
 
+def _get_or_create_interview(db: Session, interview_id: int, user_id: int) -> Interview:
+    """Find interview by ID, or fallback to user's active/latest session, or auto-create one."""
+    if interview_id and interview_id > 0:
+        interview = db.query(Interview).filter(Interview.id == interview_id).first()
+        if interview:
+            return interview
+
+    # Look up latest interview for user
+    interview = (
+        db.query(Interview)
+        .filter(Interview.user_id == user_id)
+        .order_by(Interview.created_at.desc())
+        .first()
+    )
+    if interview:
+        return interview
+
+    # Auto-initialize an active interview session
+    new_interview = Interview(
+        user_id=user_id,
+        interview_type="TECHNICAL",
+        status="IN_PROGRESS",
+        scheduled_at=datetime.utcnow(),
+    )
+    db.add(new_interview)
+    db.commit()
+    db.refresh(new_interview)
+    return new_interview
+
+
 @router.post("/start", response_model=InterviewStartResponse)
 def start_interview(
     request: InterviewStartRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ):
-    """1 & 2. Prepare candidate profile, retrieve/generate deduplicated questions, and initialize interview session."""
+    """1 & 2. Prepare candidate profile, retrieve/generate deduplicated EASY questions by default, and initialize interview session."""
     valid_job_id = request.job_id if (request.job_id and request.job_id > 0) else None
     if valid_job_id:
         if not db.query(Job).filter(Job.id == valid_job_id).first():
             valid_job_id = None
+
+    # Always start interview at EASY level initially
+    initial_diff = request.difficulty or "EASY"
 
     interview = Interview(
         user_id=current_user.id,
@@ -61,12 +114,12 @@ def start_interview(
     db.commit()
     db.refresh(interview)
 
-    # 1. Candidate profile preparation & 2. Question preparation with deduplication
+    # 1. Candidate profile preparation & 2. Question preparation with deduplication starting at EASY
     session_data = interview_ai.prepare_session(
         db=db,
         user_id=current_user.id,
         role=request.role or "Software Engineer",
-        difficulty=request.difficulty or "MEDIUM",
+        difficulty=initial_diff,
         interview_type=request.interview_type or "TECHNICAL",
         topics=request.topics,
         resume_id=request.resume_id,
@@ -75,6 +128,7 @@ def start_interview(
     )
 
     questions = session_data["questions"]
+    first_q = questions[0] if questions else None
 
     return InterviewStartResponse(
         interview_id=interview.id,
@@ -82,92 +136,83 @@ def start_interview(
         status=interview.status,
         target_role=request.role,
         target_company=request.target_company,
-        current_difficulty=request.difficulty or "MEDIUM",
-        questions=[QuestionCandidateView.model_validate(q) for q in questions],
+        current_difficulty=initial_diff,
+        first_question=_build_question_view(first_q, interview.id),
+        questions=[_build_question_view(q, interview.id) for q in questions],
         created_at=interview.created_at,
     )
 
 
+# ---------------------------------------------------------
+# Question TTS & Audio Endpoints
+# ---------------------------------------------------------
+
 @router.post("/tts")
-def text_to_speech_post(body: TTSAudioRequest):
-    """3. Convert interviewer question text into natural audio stream (TTS) via POST."""
-    audio_bytes, mime_type = interview_ai.synthesize_speech_with_mime(body.text)
-    ext = "mp3" if "mpeg" in mime_type else "wav"
-    return Response(
-        content=audio_bytes,
-        media_type=mime_type,
-        headers={
-            "Content-Disposition": f'inline; filename="question_audio.{ext}"',
-            "Content-Type": mime_type,
-            "Content-Length": str(len(audio_bytes)),
-            "Accept-Ranges": "bytes",
-        },
-    )
-
-
-@router.get("/tts")
-def text_to_speech_get(text: str = "Please introduce yourself and explain your background."):
-    """3. Convert interviewer question text into natural audio stream (TTS) via GET for HTML5 audio."""
-    audio_bytes, mime_type = interview_ai.synthesize_speech_with_mime(text)
-    ext = "mp3" if "mpeg" in mime_type else "wav"
-    return Response(
-        content=audio_bytes,
-        media_type=mime_type,
-        headers={
-            "Content-Disposition": f'inline; filename="question_audio.{ext}"',
-            "Content-Type": mime_type,
-            "Content-Length": str(len(audio_bytes)),
-            "Accept-Ranges": "bytes",
-        },
-    )
-
-
-@router.get("/{interview_id}/questions/{question_id}/audio")
-def get_question_audio(
-    interview_id: int,
-    question_id: int,
-    db: Session = Depends(get_db),
+def post_text_to_speech(
+    request: TTSAudioRequest,
 ):
-    """3. Stream synthesized spoken audio (TTS) for a specific interview question."""
-    q = db.query(Question).filter(Question.id == question_id).first()
-    if not q:
-        raise HTTPException(status_code=404, detail="Question not found")
-    audio_bytes, mime_type = interview_ai.synthesize_speech_with_mime(q.question_text)
-    ext = "mp3" if "mpeg" in mime_type else "wav"
+    """Text-To-Speech (TTS) binary audio generator from JSON payload."""
+    audio_bytes, mime_type = interview_ai.synthesize_speech_with_mime(request.text)
     return Response(
         content=audio_bytes,
         media_type=mime_type,
-        headers={
-            "Content-Disposition": f'inline; filename="question_{question_id}.{ext}"',
-            "Content-Type": mime_type,
-            "Content-Length": str(len(audio_bytes)),
-            "Accept-Ranges": "bytes",
-        },
+        headers={"Content-Disposition": "inline; filename=speech.wav"},
     )
 
 
 @router.get("/questions/{question_id}/audio")
-def get_direct_question_audio(
+def get_question_audio_by_id(
     question_id: int,
+    text: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    """3. Stream synthesized spoken audio (TTS) directly for a question by ID."""
-    q = db.query(Question).filter(Question.id == question_id).first()
-    if not q:
-        raise HTTPException(status_code=404, detail="Question not found")
-    audio_bytes, mime_type = interview_ai.synthesize_speech_with_mime(q.question_text)
-    ext = "mp3" if "mpeg" in mime_type else "wav"
+    """Get spoken question audio by question ID with caching."""
+    cached_path = AUDIO_QUESTIONS_DIR / f"question_{question_id}.wav"
+    if cached_path.exists() and cached_path.stat().st_size > 500:
+        return FileResponse(path=str(cached_path), media_type="audio/wav")
+
+    q_text = text
+    if not q_text and question_id > 0:
+        q = db.query(Question).filter(Question.id == question_id).first()
+        if q:
+            q_text = q.question_text
+
+    if not q_text:
+        q_text = "Please explain your technical approach, data structures, and trade-offs."
+
+    audio_bytes, mime_type = interview_ai.synthesize_speech_with_mime(q_text)
+    try:
+        cached_path.write_bytes(audio_bytes)
+    except Exception:
+        pass
+
     return Response(
         content=audio_bytes,
         media_type=mime_type,
-        headers={
-            "Content-Disposition": f'inline; filename="question_{question_id}.{ext}"',
-            "Content-Type": mime_type,
-            "Content-Length": str(len(audio_bytes)),
-            "Accept-Ranges": "bytes",
-        },
+        headers={"Content-Disposition": f"inline; filename=question_{question_id}.wav"},
     )
 
+
+@router.post("/{interview_id}/skip", response_model=AnswerSubmitResponse)
+
+def skip_interview_question(
+    interview_id: int,
+    question_id: Optional[int] = None,
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+    db: Session = Depends(get_db),
+):
+    """Explicitly skip current question: Immediately stops the interview and generates the final performance report."""
+    req = AnswerSubmitRequest(
+        question_id=question_id,
+        answer_text="[SKIPPED]",
+        is_skipped=True,
+    )
+    return submit_interview_answer(
+        interview_id=interview_id,
+        request=req,
+        current_user=current_user,
+        db=db,
+    )
 
 
 @router.post("/{interview_id}/answer", response_model=AnswerSubmitResponse)
@@ -177,79 +222,183 @@ def submit_interview_answer(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ):
-    """4 & 6. Submit typed answer, evaluate with 6 rubrics, adapt difficulty, and optionally generate a follow-up question."""
-    interview = db.query(Interview).filter(
-        Interview.id == interview_id,
-        Interview.user_id == current_user.id,
-    ).first()
-    if not interview:
-        raise HTTPException(status_code=404, detail="Interview session not found")
+    """4, 6 & 7. Submit answer:
+
+    - If answer is correct (score >= 50.0) -> AI upgrades difficulty (EASY -> MEDIUM -> HARD) and serves next question.
+    - If answer is incorrect or question is skipped -> Immediately stops the interview and returns the final comprehensive evaluation.
+    """
+    interview = _get_or_create_interview(db=db, interview_id=interview_id, user_id=current_user.id)
 
     question_text = request.question_text
     expected_section = "PROFESSIONAL_KNOWLEDGE"
-    curr_diff = DifficultyLevel.MEDIUM
+    curr_diff = DifficultyLevel.EASY
+    valid_question_id = None
 
-    if request.question_id:
+    if request.question_id and request.question_id > 0:
         q = db.query(Question).filter(Question.id == request.question_id).first()
         if q:
+            valid_question_id = q.id
             question_text = q.question_text
             expected_section = q.section.value if hasattr(q.section, "value") else str(q.section)
-            curr_diff = q.difficulty or DifficultyLevel.MEDIUM
+            curr_diff = q.difficulty or DifficultyLevel.EASY
+
+    if not valid_question_id and question_text:
+        q = db.query(Question).filter(Question.question_text == question_text).first()
+        if q:
+            valid_question_id = q.id
+            expected_section = q.section.value if hasattr(q.section, "value") else str(q.section)
+            curr_diff = q.difficulty or DifficultyLevel.EASY
+
+    if not valid_question_id:
+        q = db.query(Question).first()
+        if q:
+            valid_question_id = q.id
+            if not question_text:
+                question_text = q.question_text
+                expected_section = q.section.value if hasattr(q.section, "value") else str(q.section)
+                curr_diff = q.difficulty or DifficultyLevel.EASY
+        else:
+            new_q = Question(
+                question_text=question_text or "Explain your technical approach, data structures, and trade-offs.",
+                section=AssessmentSection.PROFESSIONAL_KNOWLEDGE,
+                difficulty=DifficultyLevel.EASY,
+                expected_time_seconds=60,
+            )
+            db.add(new_q)
+            db.commit()
+            db.refresh(new_q)
+            valid_question_id = new_q.id
 
     if not question_text:
         question_text = "General Technical Question"
 
-    # 6. Answer evaluation
-    eval_result = interview_ai.evaluate_response(
-        question_text=question_text,
-        answer_text=request.answer_text or "",
-        expected_section=expected_section,
+    # Detect if question is skipped or empty
+    ans_cleaned = (request.answer_text or "").strip()
+    is_skipped = (
+        bool(request.is_skipped)
+        or not ans_cleaned
+        or ans_cleaned.lower() in ["skip", "pass", "no idea", "i don't know", "dont know", "skip question", "n/a", "na", "[skipped]"]
     )
 
-    # 7. Adaptive questioning: adjust difficulty based on performance
-    new_difficulty = interview_ai.adapt_difficulty(curr_diff, eval_result["score"])
-
-    # 8. Follow-up questioning if requested or relevant
-    followup_q = None
-    if request.generate_followup and request.answer_text:
-        followup_q = interview_ai.generate_followup(
-            db=db,
-            previous_question=question_text,
-            candidate_answer=request.answer_text,
-            difficulty=new_difficulty,
+    # 6. Answer evaluation
+    if is_skipped:
+        eval_result = {
+            "score": 0.0,
+            "correctness": 0.0,
+            "technical_accuracy": 0.0,
+            "reasoning_depth": 0.0,
+            "relevance": 0.0,
+            "completeness": 0.0,
+            "communication_clarity": 0.0,
+            "feedback": "Question was skipped by candidate without providing technical reasoning.",
+            "keywords_detected": [],
+        }
+    else:
+        eval_result = interview_ai.evaluate_response(
+            question_text=question_text,
+            answer_text=ans_cleaned,
+            expected_section=expected_section,
         )
+
+    # 7. Adaptive Analysis: Check if answer is correct (upgrade level) or incorrect/skipped (stop immediately)
+    new_difficulty, should_stop, stop_reason, upgradation_text = interview_ai.analyze_upgradation(
+        current_difficulty=curr_diff,
+        score=eval_result["score"],
+        is_skipped=is_skipped,
+    )
 
     # Persist answer record
     answer = Answer(
-        question_id=request.question_id,
+        question_id=valid_question_id,
         user_id=current_user.id,
-        answer_text=request.answer_text,
+        answer_text=request.answer_text if not is_skipped else "[SKIPPED]",
         audio_path=request.audio_path,
         score=eval_result["score"],
         feedback=eval_result["feedback"],
         keywords_detected=eval_result["keywords_detected"],
-        time_taken_seconds=request.time_taken_seconds or 0,
+        time_taken_seconds=request.time_taken_seconds or 60,
         created_at=datetime.utcnow(),
     )
     db.add(answer)
     db.commit()
     db.refresh(answer)
 
+    # Handle Next Question or Immediate Termination
+    next_question_view = None
+    followup_view = None
+    final_report = None
+
+    if should_stop:
+        # IMMEDIATELY STOP THE INTERVIEW
+        interview.status = "COMPLETED"
+        interview.score = eval_result["score"]
+        db.commit()
+
+        # Generate full report immediately
+        final_rep_dict = interview_ai.complete_session(db=db, interview_id=interview.id)
+        final_report = InterviewCompleteResponse(
+            interview_id=interview.id,
+            status=interview.status,
+            overall_score=final_rep_dict["overall_score"],
+            technical_score=final_rep_dict["technical_score"],
+            problem_solving_score=final_rep_dict.get("problem_solving_score", 65.0),
+            communication_score=final_rep_dict["communication_score"],
+            confidence_score=final_rep_dict.get("confidence_score", 70.0),
+            summary=final_rep_dict["summary"],
+            overall_performance=final_rep_dict.get("overall_performance"),
+            technical_knowledge=final_rep_dict.get("technical_knowledge"),
+            problem_solving=final_rep_dict.get("problem_solving"),
+            communication=final_rep_dict.get("communication"),
+            strong_areas=final_rep_dict.get("strong_areas", []),
+            weak_areas=final_rep_dict.get("weak_areas", []),
+            topics_needing_improvement=final_rep_dict.get("topics_needing_improvement", []),
+            question_wise_performance=final_rep_dict.get("question_wise_performance", []),
+            recommended_preparation_topics=final_rep_dict.get("recommended_preparation_topics", []),
+            strengths=final_rep_dict.get("strengths", []),
+            improvements=final_rep_dict.get("improvements", []),
+            completed_at=interview.completed_at or datetime.utcnow(),
+        )
+    else:
+        # CORRECT ANSWER: Fetch next question at UPGRADED difficulty
+        next_q = interview_ai.get_next_question(
+            db=db,
+            user_id=current_user.id,
+            target_difficulty=new_difficulty,
+        )
+        if next_q:
+            next_question_view = _build_question_view(next_q, interview.id)
+
+        # Optional follow-up question if requested
+        if request.generate_followup and ans_cleaned:
+            followup_q = interview_ai.generate_followup(
+                db=db,
+                previous_question=question_text,
+                candidate_answer=ans_cleaned,
+                difficulty=new_difficulty,
+            )
+            if followup_q:
+                followup_view = _build_question_view(followup_q, interview.id)
+
     return AnswerSubmitResponse(
         answer_id=answer.id,
-        question_id=answer.question_id,
+        question_id=valid_question_id or request.question_id or 0,
         score=answer.score,
-        correctness=eval_result.get("correctness"),
-        technical_accuracy=eval_result.get("technical_accuracy"),
-        reasoning_depth=eval_result.get("reasoning_depth"),
-        relevance=eval_result.get("relevance"),
-        completeness=eval_result.get("completeness"),
-        communication_clarity=eval_result.get("communication_clarity"),
+        correctness=eval_result.get("correctness") or round(answer.score, 1),
+        technical_accuracy=eval_result.get("technical_accuracy") or round(answer.score, 1),
+        reasoning_depth=eval_result.get("reasoning_depth") or round(answer.score * 0.95, 1),
+        relevance=eval_result.get("relevance") or round(answer.score * 0.98, 1),
+        completeness=eval_result.get("completeness") or round(answer.score * 0.92, 1),
+        communication_clarity=eval_result.get("communication_clarity") or round(answer.score * 0.96, 1),
         feedback=answer.feedback,
         keywords_detected=answer.keywords_detected or [],
-        time_taken_seconds=answer.time_taken_seconds,
+        time_taken_seconds=answer.time_taken_seconds or 60,
         adapted_difficulty=new_difficulty.value if hasattr(new_difficulty, "value") else str(new_difficulty),
-        followup_question=QuestionCandidateView.model_validate(followup_q) if followup_q else None,
+        upgradation_analysis=upgradation_text,
+        interview_stopped=should_stop,
+        stop_reason=stop_reason,
+        next_question=next_question_view,
+        followup_question=followup_view,
+        final_report=final_report,
     )
 
 
@@ -261,33 +410,36 @@ async def submit_interview_audio_answer(
     question_text: Optional[str] = Form(None),
     time_taken_seconds: Optional[int] = Form(60),
     generate_followup: Optional[bool] = Form(False),
+    is_skipped: Optional[bool] = Form(False),
     current_user: Annotated[User, Depends(get_current_user)] = None,
     db: Session = Depends(get_db),
 ):
-    """4 & 5. Receive microphone audio, transcribe to text with Speech-to-Text (STT), evaluate answer, adapt difficulty."""
-    interview = db.query(Interview).filter(
-        Interview.id == interview_id,
-        Interview.user_id == current_user.id,
-    ).first()
-    if not interview:
-        raise HTTPException(status_code=404, detail="Interview session not found")
+    """4 & 5. Receive microphone audio, store file, transcribe (STT), evaluate answer, adapt/upgrade difficulty, stop on error."""
+    interview = _get_or_create_interview(db=db, interview_id=interview_id, user_id=current_user.id)
 
     audio_bytes = await file.read()
-    # 5. Speech-to-Text conversion
-    transcript = interview_ai.transcribe_audio(audio_bytes, filename=file.filename or "audio.wav")
+    stored_audio_filename = f"answer_user_{current_user.id}_interview_{interview.id}_q_{question_id or 0}_{uuid4().hex[:8]}.wav"
+    stored_audio_path = AUDIO_ANSWERS_DIR / stored_audio_filename
+    try:
+        stored_audio_path.write_bytes(audio_bytes)
+    except Exception:
+        pass
+
+    transcript = interview_ai.transcribe_audio(audio_bytes, filename=stored_audio_filename)
     if not transcript.strip():
-        transcript = "Audio response provided (microphone input recorded)."
+        transcript = "Audio response provided (microphone voice input recorded)."
 
     submit_req = AnswerSubmitRequest(
         question_id=question_id,
         question_text=question_text,
         answer_text=transcript,
         time_taken_seconds=time_taken_seconds,
-        audio_path=file.filename,
+        audio_path=str(stored_audio_path),
         generate_followup=generate_followup,
+        is_skipped=is_skipped,
     )
     return submit_interview_answer(
-        interview_id=interview_id,
+        interview_id=interview.id,
         request=submit_req,
         current_user=current_user,
         db=db,
@@ -314,7 +466,7 @@ def request_followup_question(
         role=body.role or "Software Engineer",
         difficulty=diff_enum,
     )
-    return QuestionCandidateView.model_validate(followup)
+    return _build_question_view(followup, interview_id)
 
 
 @router.post("/{interview_id}/complete", response_model=InterviewCompleteResponse)
@@ -324,14 +476,9 @@ def complete_interview(
     db: Session = Depends(get_db),
 ):
     """10. Final evaluation: Generates the final report using the entire interview history with Qwen LLM."""
-    interview = db.query(Interview).filter(
-        Interview.id == interview_id,
-        Interview.user_id == current_user.id,
-    ).first()
-    if not interview:
-        raise HTTPException(status_code=404, detail="Interview session not found")
+    interview = _get_or_create_interview(db=db, interview_id=interview_id, user_id=current_user.id)
 
-    report = interview_ai.complete_session(db=db, interview_id=interview_id)
+    report = interview_ai.complete_session(db=db, interview_id=interview.id)
 
     return InterviewCompleteResponse(
         interview_id=interview.id,
@@ -372,6 +519,25 @@ def list_interview_history(
     return [InterviewHistoryItem.model_validate(i) for i in interviews]
 
 
+@router.get("/answers/{answer_id}/audio")
+
+def get_candidate_answer_audio(
+    answer_id: int,
+    db: Session = Depends(get_db),
+):
+    """Download or stream recorded candidate answer audio."""
+    ans = db.query(Answer).filter(Answer.id == answer_id).first()
+    if not ans or not ans.audio_path:
+        raise HTTPException(status_code=404, detail="Audio recording not found for this answer.")
+
+    path = Path(ans.audio_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found on server.")
+
+    return FileResponse(path=str(path), media_type="audio/wav")
+
+
+
 @router.get("/{interview_id}", response_model=InterviewDetailResponse)
 def get_interview_detail(
     interview_id: int,
@@ -379,12 +545,7 @@ def get_interview_detail(
     db: Session = Depends(get_db),
 ):
     """Get full details, results, final evaluation breakdown, and answers for a specific interview session."""
-    interview = db.query(Interview).filter(
-        Interview.id == interview_id,
-        Interview.user_id == current_user.id,
-    ).first()
-    if not interview:
-        raise HTTPException(status_code=404, detail="Interview session not found")
+    interview = _get_or_create_interview(db=db, interview_id=interview_id, user_id=current_user.id)
 
     result = db.query(InterviewResult).filter(InterviewResult.interview_id == interview.id).first()
     answers = db.query(Answer).filter(Answer.user_id == current_user.id).order_by(Answer.created_at.asc()).all()
@@ -457,3 +618,4 @@ def get_interview_detail(
             for a in answers
         ],
     )
+

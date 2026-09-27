@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -17,14 +20,23 @@ from app.api.resume import router as resume_router
 import app.models  # noqa: F401
 from app.database.database import Base, engine
 
-# Ensure tables are registered
-Base.metadata.create_all(bind=engine)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+
+
+
 
 app = FastAPI(
     title="AI Interviewer API",
     description="Full-stack AI Mock Interview, Assessment, and Career Guidance Engine",
     version="2.0.0",
+    lifespan=lifespan,
 )
+
 
 app.add_middleware(
     CORSMiddleware,
